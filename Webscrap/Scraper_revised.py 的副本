@@ -1,0 +1,98 @@
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import os
+
+# Define the assets with ticker symbols as a dictionary
+assets = {
+    'AAPL': 'Apple',
+    'MSFT': 'Microsoft',
+    'AMZN': 'Amazon',
+    'GOOGL': 'Alphabet (Google)',
+    'META': 'Meta (Facebook)',
+    'TSLA': 'Tesla',
+    'TCEHY': 'Tencent',
+    'SSNLF': 'Samsung',
+    'BABA': 'Alibaba',
+    'NVDA': 'NVIDIA'
+}
+
+# Define the date range
+start_date = "2015-01-01"
+end_date = "2024-12-31"  # Set end date to December 31, 2024
+
+# Directory to save CSV files
+save_directory = r"C:\Users\sd_user\Downloads"
+
+# Ensure the directory exists
+os.makedirs(save_directory, exist_ok=True)
+
+# Function to calculate technical indicators
+def calculate_indicators(data):
+    # Moving Averages
+    data['SMA_20'] = data['Close'].rolling(window=20).mean()
+    data['EMA_20'] = data['Close'].ewm(span=20, adjust=False).mean()
+    
+    # RSI Calculation
+    delta = data['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / loss
+    data['RSI'] = 100 - (100 / (1 + rs))
+    
+    # MACD Calculation
+    data['EMA_12'] = data['Close'].ewm(span=12, adjust=False).mean()
+    data['EMA_26'] = data['Close'].ewm(span=26, adjust=False).mean()
+    data['MACD'] = data['EMA_12'] - data['EMA_26']
+    data['MACD_Signal'] = data['MACD'].ewm(span=9, adjust=False).mean()
+
+    return data
+
+# Function to download data and save to CSV
+def download_and_save_data(ticker, name):
+    try:
+        data = yf.download(ticker, start=start_date, end=end_date)
+        if not data.empty:
+            data.reset_index(inplace=True)  # Reset index to have a clean DataFrame
+            
+            # Calculate indicators
+            data = calculate_indicators(data)
+            
+            # Get current price and market data
+            current_price_info = yf.Ticker(ticker)
+            current_price = current_price_info.history(period='1d')['Close'][0]
+            market_cap = current_price_info.info.get('marketCap', 'N/A')
+            circulating_supply = current_price_info.info.get('circulatingSupply', 'N/A')
+            total_supply = current_price_info.info.get('totalSupply', 'N/A')
+            previous_close = data['Close'].iloc[-1] if not data.empty else 'N/A'
+            day_range = f"{data['Low'].min()} - {data['High'].max()}"
+            year_to_date = (data['Close'].iloc[-1] - data['Close'].iloc[0]) / data['Close'].iloc[0] * 100 if not data.empty else 'N/A'
+            week_52_high = data['Close'].max()
+            week_52_low = data['Close'].min()
+            
+            # Add market data to the DataFrame
+            data['Current_Price'] = current_price
+            data['Market_Cap'] = market_cap
+            data['Circulating_Supply'] = circulating_supply
+            data['Total_Supply'] = total_supply
+            data['Previous_Close'] = previous_close
+            data['Day_Range'] = day_range
+            data['52_Week_High'] = week_52_high
+            data['52_Week_Low'] = week_52_low
+            data['YTD_Performance'] = year_to_date
+            
+            # Rename columns to include the ticker
+            data.columns = [f"{ticker}_{col}" if col != 'Date' else 'Date' for col in data.columns]
+            
+            # Save to CSV in the specified directory
+            csv_filename = os.path.join(save_directory, f"{name.replace(' ', '_').lower()}_data.csv")
+            data.to_csv(csv_filename, index=False)
+            print(f"Data for {name} downloaded and saved as {csv_filename}")
+        else:
+            print(f"No data found for {name}")
+    except Exception as e:
+        print(f"Error downloading data for {name}: {e}")
+
+# Download data for each asset and save to individual CSV files
+for ticker, name in assets.items():
+    download_and_save_data(ticker, name)
